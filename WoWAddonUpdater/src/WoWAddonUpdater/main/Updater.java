@@ -3,15 +3,12 @@ package WoWAddonUpdater.main;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Scanner;
-import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,6 +22,11 @@ public class Updater {
 		"user-action user-action-download.*href=\"/addons/(.*)\">Download",
 		"user-action user-action-download.*href=\"(.*)\">Download", 
 		"## X-Curse-Project-ID: (.*)[\\W]*"};
+	private static final String[] CURSE_FORGE_ALPHA = {"http://wow.curseforge.com/addons/%s/files/", 
+		"<td class=\"col-file\"><a href=\".*?/files/(.*?)\">",
+		"user-action user-action-download.*?href=\"(.*?)\">Download", 
+		"## X-Curse-Project-ID: (.*)[\\W]*",
+		"Uploaded on.*?title=\"(.*?)\""};
 	private static final String DEFAULT_PATH = "J:/World of Warcraft/Interface/AddOns";
 	private static final String DEFAULT_DOWNLOAD_PATH = DEFAULT_PATH + "/WoWAddonUpdater";
 	private static final boolean DEFAULT_THOROUGH = true;
@@ -40,15 +42,18 @@ public class Updater {
 	private static final String ADDON_PATH = "/Interface/Addons";
 	private static final String TITLE = "\nWoWAddonUpdater\n";
 	private static boolean auto = true;
+	private static boolean alpha = true;
+	private static final String[] sources = {"curse", "wowace"};
 
 	public static void main(String[] args) {
 		System.out.println(TITLE);
 		if ((auto && !auto()) || !auto) {
 			path = prompt(path);
 		}
-		download(generateDownloadLinks(parseFolder(path, CURSE_FORGE, thorough), CURSE_FORGE), downloadPath);
+		download(generateDownloadLinks(parseFolder(path, alpha ? CURSE_FORGE_ALPHA : CURSE_FORGE, thorough), alpha ? CURSE_FORGE_ALPHA : CURSE_FORGE), downloadPath);
 		unzip(downloadPath, path);
 		refreshFolder(downloadPath);
+		System.out.println("\nall done - bye!");
 	}
 	
 	private static boolean auto() {
@@ -93,17 +98,6 @@ public class Updater {
 		}
 	}
 	
-//	private static <T> boolean askTell(T[][] dialog, Consumer<T> output) {
-//		for (T[] sentence : dialog) {
-//			output.accept(sentence[0]);
-//			if (sentence[1] != null) {
-//				output.accept(sentence[]);
-//			}
-//			
-//		}
-//
-//		System.out.println(question);
-//	}
 	
 	private static String prompt(String path) {
 		System.out.println("enter q/quit to exit");
@@ -214,20 +208,33 @@ public class Updater {
 		ArrayList<URL> downloadLinks = new ArrayList<>();
 		for (String addon : addons) {
 			try {
-				URL u = new URL(patterns[0] + addon + "/");
+				URL u = alpha ? new URL(String.format(patterns[0], addon)) : 
+					new URL(patterns[0] + addon + "/");
 				String c = dumpUrl(u);
 				Pattern p = Pattern.compile(patterns[1]);
 				Matcher m = p.matcher(c);
 				if (m.find()) {
 					String s = m.group(1);
-					u = new URL(patterns[0] + s);
+					u = alpha ? new URL(String.format(patterns[0], addon) + s) : 
+						new URL(patterns[0] + s);
 					c = dumpUrl(u);
 					p = Pattern.compile(patterns[2]);
 					m = p.matcher(c);
 					if (m.find()) {
 						s = m.group(1);
-						downloadLinks.add(new URL(s));
-						System.out.println(String.format("[%d of %d] parsed: %s\t%s", ++currentCount, totalCount, addon, s));
+						boolean validSource = false;
+						for (String source : sources) {
+							if (s.contains(source)) {
+								validSource = true;
+								break;
+							}
+						}
+						if (validSource) {
+							downloadLinks.add(new URL(s));
+							System.out.println(String.format("[%d of %d] parsed: %s\t%s", ++currentCount, totalCount, addon, s));
+						} else {
+							totalCount--;
+						}
 					}
 				}
 			} catch (Exception e) {
