@@ -5,10 +5,12 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.PrintWriter;
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -42,118 +44,117 @@ public class Updater {
 	private static final Pattern PATTERN_FOLDER_INPUT = Pattern.compile("(.*World of Warcraft).*");
 	private static final Pattern PATTERN_FOLDER_SEARCH = Pattern.compile("(.*World of Warcraft)$");
 	private static final Pattern DETECT_DOWNLOAD_ZIP = Pattern.compile(".*/([^/]*zip)");
-	private int searchDepth = 2;
+	private static final int SEARCH_DEPTH = 2;
 	private static final String ADDONS_PATH_POSTFIX = "/Interface/Addons";
 	private static final String UPDATER_PATH_POSTFIX = "/Interface/WoWAddonUpdater";
 	private static final String TITLE = "WoWAddonUpdater";
-	private boolean auto = true;
 	private static final String SETTINGS_FILE_NAME = "WoWAddonUpdater.config";
 	private boolean getAlpha = true;
-	private String[] curseForge;
 	private HashMap<String, String[]> addonStorage = new HashMap<>();
 	private HashMap<String, Boolean> urlStorage = new HashMap<>();
 	private boolean setUp = false;
 
 	public static void main(String[] args) {
-		Updater updater = new Updater();
-		loadSettings();
-		if ((auto && !auto()) || !auto) {
-			path = prompt(path);
+		System.out.println("\n" + TITLE + "\n");
+		Object[] loaded = loadFromSettingsOrCreateFromScratch(SETTINGS_FILE_NAME);
+		Updater updater = (Updater)loaded[0];
+		updater.update(loaded);
+		System.out.println("\nall done - bye!\n");
+	}
+		
+	public void update(Object[] loaded) {
+		if (loaded[1] != null) { // no settings found
+			ArrayList<String> detectedPaths = searchRoots(0, SEARCH_DEPTH, PATTERN_FOLDER_SEARCH);
+			rootPath = AutoExecuteOrPrompt(detectedPaths, System.in, s -> System.out.println(s));
 		}
-		curseForge = getAlpha ? CURSE_FORGE_ALPHA : CURSE_FORGE_RELEASE;
-		download(generateDownloadLinks(parseFolder(path, curseForge, thorough), curseForge), path.replace("Addons","") + "WoWAddonUpdater/" + SETTINGS);
-		unzip(path.replace("Addons","") + "WoWAddonUpdater/" + SETTINGS, path);
-		refreshFolder(path.replace("Addons","") + "WoWAddonUpdater/" + SETTINGS);
-		exit(null, null);
-		dumpSettings(path.replace("Addons","") + "WoWAddonUpdater/" + SETTINGS);
+		download(generateDownloadLinks(parseFolder()), rootPath + UPDATER_PATH_POSTFIX);
+		unzip(rootPath + UPDATER_PATH_POSTFIX, rootPath + ADDONS_PATH_POSTFIX);
+		saveSettings();
 	}
 	
-	public Updater() {
-		System.out.println("/n" + TITLE + "/");
-		ArrayList<String> detectedRootPaths = search();
-			
-		}
+	private void saveSettings() {
+		
 	}
 	
-	private static void dumpSettings(String path) {
-		File f = new File(path);
-		if (!f.exists()) {
-			try (ObjectOutputStream oos = new ObjectOutputStream(
-					new FileOutputStream(f))){
-				f.createNewFile();
-				oos.writeObject(path);
-				oos.writeObject(downloadPath);
-				oos.writeObject(thorough);
-				oos.writeObject(searchDepth);
-				oos.writeObject(auto);
-				oos.writeObject(getAlpha);
-				oos.writeObject(addonStorage);
-				oos.writeObject(setUp);
-				oos.writeObject(urlStorage);
-			} catch (IOException e) {
-				e.printStackTrace();
-			} 
-		}
-	}
-	
-	private static sca
-	
-	private Updater loadSettings(String rootPath) {
-		File f = new File(path.replace("Addons","") + "WoWAddonUpdater/" + SETTINGS);
-		if (f.exists()) {
-			try (ObjectInputStream ois = new ObjectInputStream(
-					new FileInputStream(f))){
-				path = (String)ois.readObject();
-				downloadPath = (String) ois.readObject();
-				thorough = (Boolean) ois.readObject();
-				searchDepth = (Integer) ois.readObject();
-				auto = (Boolean) ois.readObject();
-				getAlpha = (Boolean) ois.readObject();
-				addonStorage = (HashMap<String, String[]>) ois.readObject();
-				setUp = (Boolean) ois.readObject();
-				urlStorage = (HashMap<String, Boolean>) ois.readObject();
-				return true;
-			} catch(Exception e) {
-				e.printStackTrace();
-				return false;
+	private static String AutoExecuteOrPrompt(ArrayList<String> detectedRootPaths, InputStream in, Consumer<String> out) {
+		int detectedInstalls = detectedRootPaths.size();
+		if (detectedInstalls == 1) {
+			out.accept("WoW install found\n=> " + detectedRootPaths.get(0));
+			return detectedRootPaths.get(0);
+		} else if (detectedInstalls > 1) {
+			out.accept("multiple WoW installs found\n");
+			int rootCount = 1;
+			for (String root : detectedRootPaths) {
+				out.accept(String.format("=>\t%s\t[%d]", root, rootCount++));
+			}
+			out.accept("\nenter the number to the right of the results");
+			try (Scanner scan = new Scanner(in)) {
+				while (scan.hasNext()) {
+					int input = Integer.parseInt(scan.next().trim().toLowerCase());
+					if (input >= 0 && input < detectedRootPaths.size()) {
+						out.accept("default WoW install\n=>\t" + detectedRootPaths.get(input));
+						return detectedRootPaths.get(input);
+					} 
+				}
+			}
+		} else {
+			out.accept("no WoW install found\npls enter the root folder of your WoW install\ne.g. C:\\Program Files\\World of Warcraft");
+			try (Scanner scan = new Scanner(in)) {
+				while (scan.hasNextLine()) {
+					String input = scan.nextLine().trim(); 
+					Matcher m = PATTERN_FOLDER_INPUT.matcher(input);
+					System.out.println(input);
+					if (new File(input).exists() && m.find()) {
+						System.out.println(new File(input).exists());
+						String rootPath = m.group(1);
+						out.accept("default WoW install\n=>\t"+ rootPath);
+						return rootPath;
+					} 
+				}
 			}
 		}
-		return false;
+		return null;
 	}
 	
-	private static String auto() {
-		System.out.println("searching for WoW install...\n");
-		String rootPath = null;
+	private static String getRootOfUpdater() {
+//		return new Object().getClass().getProtectionDomain().getCodeSource().getLocation().toString();
+		try {
+			return Updater.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath();
+		} catch (URISyntaxException e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+	
+	private static Object[] loadFromSettingsOrCreateFromScratch(String settingsFileName) {
+		File settings = new File(getRootOfUpdater());
+		if (settings.exists()) {
+				try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(settings))) {
+					return new Object[]{ois.readObject(), null};
+			} catch(Exception e) {
+				return new Object[]{new Updater(), new Object()};
+			}	
+		}
+		return new Object[]{new Updater(), new Object()};
+	}
+	
+	private static ArrayList<String> searchRoots(int depth, int maxDepth, Pattern p) {
+		ArrayList<String> detectedPaths = new ArrayList<>();
 		FileSystemView fsv = FileSystemView.getFileSystemView();
 		File[] roots = File.listRoots();
 		for (File root : roots) {
 			if (fsv.getSystemTypeDescription(root).equals("Local Disk")) {
-				search(root, 0, PATTERN_FOLDER_SEARCH);
+				detectedPaths.addAll(search(root, 0, maxDepth, p));
 			}
 		}
-		System.out.println();
-		if (detectedPaths.size() == 1) {
-			rootPath = detectedPaths.get(0);
-			System.out.println("WoW install found: " + rootPath + "\n");
-			return rootPath;
-		} else if (detectedPaths.size() > 1) {
-			System.out.println("duplicate WoW installs found\nmanual input required!\n");
-			int c = 1;
-			for (String s : detectedPaths) {
-				System.out.println(String.format("%s\t[%d]", s, c++));
-			}
-			System.out.println();
-			return null;
-		}
-		System.out.println("no WoW installs found\nmanual input required!\n\n");
-		return null;
+		return detectedPaths;
 	}
 	
-	private static ArrayList<String> search(File file, int depth, Pattern p) {
+	private static ArrayList<String> search(File file, int depth, int maxDepth, Pattern p) {
 		ArrayList<String> detectedPaths = new ArrayList<>();
 		class Recursor {
 			public void recurse(File file, int depth, Pattern p) {
-			if (depth <= searchDepth) {
+			if (depth <= maxDepth) {
 					System.out.println("scanning " + file.toString());
 					Matcher m = p.matcher(file.toString());
 					if (m.find()) {
@@ -161,7 +162,7 @@ public class Updater {
 					}
 					if (file != null && file.isDirectory() && file.listFiles() != null) {
 						for (File f : file.listFiles()) {
-							search(f, depth + 1, p);
+							search(f, depth + 1, maxDepth, p);
 						}
 					}
 				}
@@ -170,93 +171,12 @@ public class Updater {
 		new Recursor().recurse(file, depth, p);
 		return detectedPaths;
 	}
-	
-	private static String prompt(String rootPath) {
-		System.out.println("enter q/quit to exit");
-		Scanner scan = new Scanner(System.in);
-		String input;
-		if (detectedPaths.size() >= 2) {
-			System.out.println("select the WoW install to update\n");
-			while (scan.hasNext()) {
-				input = scan.next().toLowerCase();
-				exit(input, scan);
-				int numericInput = Integer.parseInt(input);
-				if (numericInput <= detectedPaths.size()) {
-					rootPath = detectedPaths.get(numericInput - 1);
-					break;
-				} else {
-					System.out.println("\nselect the WoW install to update\n");
-					System.out.println("or enter q/quit to exit");
-				}
-			}
-		}
-		System.out.println("Perform thorough update?");
-		System.out.println("y/yes n/no\n");
-		input = scan.next().toLowerCase();
-		exit(input, scan);
-		if (input.startsWith("y")) {
-			thorough = true;
-		}
-		System.out.println("get alpha versions?");
-		System.out.println("y/yes n/no\n");
-		input = scan.next().toLowerCase();
-		exit(input, scan);
-		if (input.startsWith("y")) {
-			getAlpha = true;
-		} else {
-			getAlpha = false;
-		}
-		if (detectedPaths.size() == 0) {
-			System.out.println("skip setup and start?");
-			System.out.println("y/yes n/no\n");
-			if (scan.next().toLowerCase().startsWith("y")) {
-				scan.close();
-				return rootPath;
-			}
-			Matcher m;
-			String s = "enter path to root WoW directory\n";
-			System.out.println(s);
-			scan.nextLine();
-			while (scan.hasNextLine()) {
-				input = scan.nextLine();
-				exit(input, scan);
-				m = PATTERN_FOLDER_INPUT.matcher(input);
-				if (new File(input).exists() && m.find()) {
-					rootPath = m.group(1);
-					break;
-				} else {
-					System.out.println(s);
-				}
-			}
-		}
-		scan.close();
-		return rootPath;
 
-	}
-	
-	private static void exit(String input, Scanner scan) {
-		if (input != null) {
-			input = input.trim().toLowerCase();
-		}
-		if (input == null || input.equals("q") || input.equals("quit")) {
-			if (scan != null) scan.close();
-			System.out.println("\nall done!\nbye!");
-			if (input == null && setUp) {
-				dumpSettings(path.replace("Addons","") + "WoWAddonUpdater/" + SETTINGS);
-			}
-			try {
-				Thread.sleep(1000);
-			} catch (InterruptedException e) {
-			} finally {
-				System.exit(0);
-			}
-		}
-	}
-
-	private static ArrayList<String> parseFolder(String path, String[] patterns, boolean thorough) {
+	private  ArrayList<String> parseFolder() {
+		String[] patterns = getAlpha ? CURSE_FORGE_ALPHA : CURSE_FORGE_RELEASE;
 		System.out.println("\ndetecting addons...\n");
 		ArrayList<String> addons = new ArrayList<>();
-		File[] files = new File(path).listFiles();
+		File[] files = new File(rootPath).listFiles();
 		int totalCount = files.length;
 		int currentCount = 0;
 		String n;
@@ -264,7 +184,7 @@ public class Updater {
 		for (File file : files) {
 			boolean hasId = false;
 			n = file.getName();
-			f = new File(path + "/" + n + "/" + n + ".toc");
+			f = new File(rootPath + "/" + n + "/" + n + ".toc");
 			try (Scanner c = new Scanner(f)){
 				Pattern p = Pattern.compile(patterns[3]);
 				while (c.hasNextLine()) {
@@ -292,7 +212,8 @@ public class Updater {
 		return result;
 	}
 	
-	private static ArrayList<URL> generateDownloadLinks(ArrayList<String> addons, String[] patterns) {
+	private ArrayList<URL> generateDownloadLinks(ArrayList<String> addons) {
+		String[] patterns = getAlpha ? CURSE_FORGE_ALPHA : CURSE_FORGE_RELEASE;
 		System.out.println("\nparsing...\n");
 		if (addons == null || addons.size() == 0) return null;
 		int totalCount = addons.size();
@@ -349,7 +270,7 @@ public class Updater {
 		return null;
 	}
 	
-	private static void download(ArrayList<URL> urls, String downloadPath) {
+	private void download(ArrayList<URL> urls, String downloadPath) {
 		System.out.println("\ndownloading...\n");
 		refreshFolder(downloadPath);
 		int totalCount = urls.size();
@@ -371,7 +292,7 @@ public class Updater {
 		}
 	}
 	
-	private static void unzip(String from, String to) {
+	private void unzip(String from, String to) {
 		System.out.println("\nextracting...\n");
 		File[] files = new File(from).listFiles();
 		int totalCount = files.length;
@@ -383,16 +304,15 @@ public class Updater {
 		    } catch (ZipException e) {
 		    }
 		}
+		refreshFolder(rootPath + ADDONS_PATH_POSTFIX);
 	}
 	
-	private static void refreshFolder(String downloadPath) {
+	private void refreshFolder(String downloadPath) {
 		File folder = new File(downloadPath);
 		if (folder.exists()) {
 			File[] files = folder.listFiles();
 			for (File f : files) {
-				if (!f.getName().equals(SETTINGS)) {
-					f.delete();
-				}
+				f.delete();
 			}
 		} else {
 			folder.mkdir();
