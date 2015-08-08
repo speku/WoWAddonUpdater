@@ -295,6 +295,7 @@ public class Updater {
 			for (File f : files) {
 				f.delete();
 			}
+			folder.delete();
 		} else {
 			folder.mkdir();
 		}
