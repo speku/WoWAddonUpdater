@@ -27,11 +27,10 @@ public class Updater {
 		"user-action user-action-download.*?href=\"(.*?)\">Download", 
 		"## X-Curse-Project-ID: (.*)[\\W]*",
 		"Uploaded on.*?title=\"(.*?)\""};
-	private static final String DEFAULT_PATH = "J:/World of Warcraft/Interface/AddOns";
-	private static final String DEFAULT_DOWNLOAD_PATH = DEFAULT_PATH + "/WoWAddonUpdater";
+	private static final String DOWNLOAD_PATH_POSTFIX = "/WoWAddonUpdater";
 	private static final boolean DEFAULT_THOROUGH = true;
-	private static String path = DEFAULT_PATH;
-	private static String downloadPath = DEFAULT_DOWNLOAD_PATH;
+	private static String path;
+	private static String downloadPath;
 	private static boolean thorough = DEFAULT_THOROUGH;
 	private static ArrayList<String> detectedPaths = new ArrayList<>();
 	private static final Pattern PATTERN_FOLDER_INPUT = Pattern.compile("(.*World of Warcraft).*");
@@ -39,16 +38,17 @@ public class Updater {
 	private static final Pattern DETECT_DOWNLOAD_ZIP = Pattern.compile(".*/([^/]*zip)");
 	private static final int SEARCH_DEPTH = 2;
 	private static int searchDepth = SEARCH_DEPTH;
-	private static final String ADDON_PATH = "/Interface/Addons";
+	private static final String ADDON_PATH_POSTFIX = "/Interface/Addons";
 	private static final String TITLE = "\nWoWAddonUpdater\n";
 	private static boolean auto = true;
 	private static boolean alpha = true;
 	private static final String[] sources = {"curse", "wowace"};
+	private static  String[] defaultRootPaths = {"C:\\Program Files (x86)\\World of Warcraft"};
 
 	public static void main(String[] args) {
 		System.out.println(TITLE);
 		if ((auto && !auto()) || !auto) {
-			path = prompt(path);
+			prompt(path);
 		}
 		download(generateDownloadLinks(parseFolder(path, alpha ? CURSE_FORGE_ALPHA : CURSE_FORGE, thorough), alpha ? CURSE_FORGE_ALPHA : CURSE_FORGE), downloadPath);
 		unzip(downloadPath, path);
@@ -58,6 +58,10 @@ public class Updater {
 	
 	private static boolean auto() {
 		System.out.println("searching for WoW install...\n");
+		if (checkDefaulPaths()) {
+			System.out.println("WoW install found: " + path + "\n");
+			return true;
+		}
 		FileSystemView fsv = FileSystemView.getFileSystemView();
 		File[] roots = File.listRoots();
 		for (File root : roots) {
@@ -67,7 +71,7 @@ public class Updater {
 		}
 		System.out.println();
 		if (detectedPaths.size() == 1) {
-			path = detectedPaths.get(0) + ADDON_PATH;
+			generatePaths(detectedPaths.get(0));
 			System.out.println("WoW install found: " + path + "\n");
 			return true;
 		} else if (detectedPaths.size() > 1) {
@@ -81,6 +85,23 @@ public class Updater {
 		}
 		System.out.println("no WoW installs found\nmanual input required!\n\n");
 		return false;
+	}
+	
+	private static boolean checkDefaulPaths(){
+		if (defaultRootPaths != null && defaultRootPaths.length > 0) {
+			for (String p : defaultRootPaths) {
+				if (new File(p).exists()) {
+					generatePaths(p);
+					return true;
+				}
+			}
+		} 
+		return false;
+	}
+	
+	private static void generatePaths(String p){
+		path = p + ADDON_PATH_POSTFIX;
+		downloadPath = p + DOWNLOAD_PATH_POSTFIX;
 	}
 	
 	private static void search(File file, int depth, Pattern p) {
@@ -110,7 +131,9 @@ public class Updater {
 				exit(input, scan);
 				int numericInput = Integer.parseInt(input);
 				if (numericInput <= detectedPaths.size()) {
-					path = detectedPaths.get(numericInput - 1) + ADDON_PATH;
+					generatePaths(detectedPaths.get(numericInput - 1));
+					System.out.println(Updater.path);
+					System.out.println(downloadPath);
 					break;
 				} else {
 					System.out.println("\nselect the WoW install to update\n");
@@ -126,12 +149,12 @@ public class Updater {
 			thorough = true;
 		}
 		if (detectedPaths.size() == 0) {
-			System.out.println("skip setup and start?");
-			System.out.println("y/yes n/no\n");
-			if (scan.next().toLowerCase().startsWith("y")) {
-				scan.close();
-				return path;
-			}
+//			System.out.println("skip setup and start?");
+//			System.out.println("y/yes n/no\n");
+//			if (scan.next().toLowerCase().startsWith("y")) {
+//				scan.close();
+//				return path;
+//			}
 			Matcher m;
 			String s = "enter path to root WoW directory\n";
 			System.out.println(s);
@@ -141,7 +164,7 @@ public class Updater {
 				exit(input, scan);
 				m = PATTERN_FOLDER_INPUT.matcher(input);
 				if (new File(input).exists() && m.find()) {
-					path = m.group(1) + ADDON_PATH;
+					generatePaths(m.group(1));
 					break;
 				} else {
 					System.out.println(s);
@@ -276,6 +299,7 @@ public class Updater {
 	
 	private static void unzip(String from, String to) {
 		System.out.println("\nextracting...\n");
+		System.out.println(from);
 		File[] files = new File(from).listFiles();
 		int totalCount = files.length;
 		int currentCount = 0;
