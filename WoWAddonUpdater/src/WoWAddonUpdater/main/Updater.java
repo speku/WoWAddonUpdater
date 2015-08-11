@@ -3,6 +3,7 @@ package WoWAddonUpdater.main;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -26,7 +27,9 @@ public class Updater {
 		"<td class=\"col-file\"><a href=\".*?/files/(.*?)\">",
 		"user-action user-action-download.*?href=\"(.*?)\">Download", 
 		"## X-Curse-Project-ID: (.*)[\\W]*",
-		"Uploaded on.*?title=\"(.*?)\""};
+		"Uploaded on.*?title=\"(.*?)\"", 
+		"http://wow.curseforge.com/search/?search=",
+		"<tr class=\"odd row-joined-to-next\">.*?addons/(.*?)/\""};
 	private static final String DOWNLOAD_PATH_POSTFIX = "/WoWAddonUpdater";
 	private static final boolean DEFAULT_THOROUGH = true;
 	private static String path;
@@ -43,7 +46,7 @@ public class Updater {
 	private static boolean auto = true;
 	private static boolean alpha = true;
 	private static final String[] sources = {"curse", "wowace"};
-	private static  String[] defaultRootPaths = {"C:\\Program Files (x86)\\World of Warcraft"};
+	private static  String[] defaultRootPaths = {"C:\\Program Files (x86)\\World of Warcraft","J:\\World of Warcraft"};
 
 	public static void main(String[] args) {
 		System.out.println(TITLE);
@@ -149,12 +152,6 @@ public class Updater {
 			thorough = true;
 		}
 		if (detectedPaths.size() == 0) {
-//			System.out.println("skip setup and start?");
-//			System.out.println("y/yes n/no\n");
-//			if (scan.next().toLowerCase().startsWith("y")) {
-//				scan.close();
-//				return path;
-//			}
 			Matcher m;
 			String s = "enter path to root WoW directory\n";
 			System.out.println(s);
@@ -223,6 +220,31 @@ public class Updater {
 		return new ArrayList<String>(new HashSet<String>(addons));
 	}
 	
+	private static boolean searchUnknown(String addon, ArrayList<URL> downloadLinks, String[] patterns) {
+		try {
+			URL u = new URL(patterns[5] + addon);
+			String s = dumpUrl(u);
+			Pattern p = Pattern.compile(patterns[6]);
+			Matcher m = p.matcher(s);
+			if (m.find()) {
+				s = m.group(1);
+				if (s.startsWith(addon.substring(0,3)) || s.endsWith(addon.substring(addon.length()-4, addon.length() -1)) || s.contains(addon.substring(1, 4))) {
+					ArrayList<String> foundAddon = new ArrayList<>();
+					foundAddon.add(s);
+					ArrayList<URL> links = generateDownloadLinks(foundAddon, patterns);
+					if (links != null && links.size() > 0) {
+						downloadLinks.add(links.get(0));
+						return true;
+					}
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			return false;
+		} 
+		return false;
+	}
+	
 	private static ArrayList<URL> generateDownloadLinks(ArrayList<String> addons, String[] patterns) {
 		System.out.println("\nparsing...\n");
 		if (addons == null || addons.size() == 0) return null;
@@ -256,12 +278,14 @@ public class Updater {
 							downloadLinks.add(new URL(s));
 							System.out.println(String.format("[%d of %d] parsed: %s\t%s", ++currentCount, totalCount, addon, s));
 						} else {
-							totalCount--;
+								totalCount--;
 						}
 					}
 				}
 			} catch (Exception e) {
-				totalCount--;
+				if (!searchUnknown(addon, downloadLinks, patterns)) {
+					totalCount--;
+				}
 			} 
 		}
 		return downloadLinks;
